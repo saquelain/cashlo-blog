@@ -85,6 +85,19 @@ Uses Payload's built-in `versions.drafts.schedulePublish` on `Posts`
 published. This is a native Payload feature, not custom code — don't
 reimplement it with a separate cron job.
 
+## Rich text -> HTML (for the consuming frontend)
+
+`Posts.contentHTML` and `Posts.faqs[].answerHTML` are **virtual fields**
+(`src/collections/Posts.ts`) computed on read via
+`@payloadcms/richtext-lexical/html`'s `convertLexicalToHTML`. They convert
+the stored Lexical JSON into plain HTML strings at API-response time. This
+is deliberate: it keeps `@payloadcms/richtext-lexical` (and its heavy peer
+deps — `payload`, `@payloadcms/next`, etc.) confined to this repo.
+`cashlo-final` should read `contentHTML`/`answerHTML` from the REST/GraphQL
+response and `dangerouslySetInnerHTML` them directly — it must NOT install
+`@payloadcms/richtext-lexical` itself or try to parse the raw `content`/
+`answer` Lexical JSON field.
+
 ## SEO plugin
 
 `@payloadcms/plugin-seo` (configured in `payload.config.ts`) auto-generates

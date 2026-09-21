@@ -1,4 +1,8 @@
 import type { CollectionConfig } from 'payload';
+import { convertLexicalToHTML, defaultHTMLConverters } from '@payloadcms/richtext-lexical/html';
+
+const toHTML = (data: unknown) =>
+  data ? convertLexicalToHTML({ data: data as any, converters: defaultHTMLConverters }) : '';
 
 // Maps 1:1 onto Harender's SEO requirements doc (2026-09-21 email).
 // MANUAL fields are editable in the admin UI below.
@@ -105,6 +109,15 @@ export const Posts: CollectionConfig = {
       required: true,
     },
     {
+      // Pre-rendered HTML so cashlo-final never has to parse Lexical JSON
+      // or depend on @payloadcms/richtext-lexical itself.
+      name: 'contentHTML',
+      type: 'text',
+      virtual: true,
+      admin: { hidden: true },
+      hooks: { afterRead: [({ siblingData }) => toHTML(siblingData?.content)] },
+    },
+    {
       name: 'featuredImage',
       type: 'upload',
       relationTo: 'media',
@@ -141,6 +154,13 @@ export const Posts: CollectionConfig = {
       fields: [
         { name: 'question', type: 'text', required: true },
         { name: 'answer', type: 'richText', required: true },
+        {
+          name: 'answerHTML',
+          type: 'text',
+          virtual: true,
+          admin: { hidden: true },
+          hooks: { afterRead: [({ siblingData }) => toHTML(siblingData?.answer)] },
+        },
       ],
     },
 
