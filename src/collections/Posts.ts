@@ -101,22 +101,26 @@ export const Posts: CollectionConfig = {
           }
         }
       },
-      ({ doc, previousDoc }) => {
+      async ({ doc, previousDoc }) => {
         // On-demand ISR revalidation on cashlo-final, mirroring
         // cashlo-backend's revalidateBlogFrontend — fires the moment an
         // editor saves instead of waiting up to 60s for the fetch-level
-        // revalidate window. Best-effort/fire-and-forget: never awaited,
-        // never blocks the save.
-        void revalidateBlogFrontend(doc.slug);
+        // revalidate window. MUST be awaited, not fire-and-forget: Vercel's
+        // serverless runtime can freeze/kill the function the instant the
+        // response is sent, cutting off any un-awaited outbound request
+        // before it completes (this bit us once already — silently never
+        // revalidated). revalidateBlogFrontend() itself never throws, so
+        // awaiting it still can't block/fail the save.
+        await revalidateBlogFrontend(doc.slug);
         if (previousDoc?.slug && previousDoc.slug !== doc.slug) {
-          void revalidateBlogFrontend(previousDoc.slug);
+          await revalidateBlogFrontend(previousDoc.slug);
         }
         return doc;
       },
     ],
     afterDelete: [
-      ({ doc }) => {
-        void revalidateBlogFrontend(doc.slug);
+      async ({ doc }) => {
+        await revalidateBlogFrontend(doc.slug);
       },
     ],
   },
