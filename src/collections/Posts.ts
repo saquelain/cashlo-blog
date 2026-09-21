@@ -131,6 +131,30 @@ export const Posts: CollectionConfig = {
       required: true,
     },
     {
+      // Users' own access rules correctly block public reads (staff emails/
+      // roles shouldn't be exposed), which also blocks Payload from
+      // populating `author` for unauthenticated requests. Rather than loosen
+      // Users' security, denormalize just the display name here via a
+      // privileged internal lookup — the public API never touches /api/users.
+      name: 'authorName',
+      type: 'text',
+      virtual: true,
+      admin: { hidden: true },
+      hooks: {
+        afterRead: [
+          async ({ siblingData, req }) => {
+            const author = siblingData?.author;
+            if (author && typeof author === 'object') return author.name;
+            if (!author) return undefined;
+            const user = await req.payload
+              .findByID({ collection: 'users', id: author, depth: 0, overrideAccess: true })
+              .catch(() => null);
+            return user?.name;
+          },
+        ],
+      },
+    },
+    {
       name: 'category',
       type: 'relationship',
       relationTo: 'categories',
