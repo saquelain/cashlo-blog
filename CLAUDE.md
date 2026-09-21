@@ -90,9 +90,13 @@ This repo's `Users` collection (`src/collections/Users.ts`) is a
   collection/data — not shared or synced.
 - **`Redirects.ts`** — populated automatically by `Posts`' `afterChange`
   hook whenever a published post's slug changes (covers "301 Redirect on
-  Slug Change"). `cashlo-final` needs to read this collection (via REST or
-  Local API) and issue the actual 301, e.g. in `middleware.ts` — that
-  frontend-side piece is NOT built yet.
+  Slug Change"). Consumed by `cashlo-final`'s `getRedirectTarget()`
+  (`src/lib/blogApi.ts`) — called only when the normal slug lookup on
+  `blog/[slug]/page.tsx` already failed, via `permanentRedirect()`, so
+  posts that were never renamed pay zero extra request cost. A slug
+  renamed more than once resolves via multiple sequential redirect hops,
+  not a single direct one — no chain-resolution logic, deliberately, since
+  that's a rare edge case not worth the complexity.
 
 ## Scheduled Publishing
 
@@ -219,10 +223,6 @@ Known-fixed issues worth knowing about if they resurface:
   something to build as a Payload collection or plugin.
 - The "MJ blog section" mentioned in Harender's email has no known repo in
   this workspace — still needs clarifying with him which project that is.
-- `Redirects.ts` is populated automatically on slug change, but
-  `cashlo-final` doesn't read it anywhere yet — an old slug that changed
-  still 404s on the public site instead of 301ing. Needs middleware or a
-  route handler in `cashlo-final` to actually consult this collection.
 
 ## Working conventions
 
