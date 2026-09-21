@@ -124,25 +124,55 @@ title/excerpt/featuredImage but overridable per-post. `focusKeyword`,
 on `Posts` (the plugin doesn't cover these) — see the "Advanced SEO"
 collapsible section in `Posts.ts`.
 
-## Not built yet (scaffold only — this file was created before any `npm install`/deploy)
+## Revalidation on publish
 
-- `npm install` has not been run in this repo yet (the interactive
-  `create-payload-app` CLI couldn't run in a non-TTY environment, so this
-  was hand-scaffolded to match Payload 3's Next.js-integration file layout —
-  verify `npm run build` succeeds before deploying, some file may need
-  adjustment for the exact Payload/Next version pinned in `package.json`).
+`Posts`' second `afterChange` hook (`src/collections/Posts.ts`) and
+`afterDelete` hook call `revalidateBlogFrontend()`
+(`src/utils/revalidateFrontend.ts`), which POSTs to `cashlo-final`'s
+existing `/api/revalidate` route — the same endpoint/secret
+`cashlo-backend` already uses for this (`FRONTEND_URL` +
+`REVALIDATE_SECRET` must match `cashlo-final`'s own `REVALIDATE_SECRET`
+exactly). Fire-and-forget (never awaited, never throws) — a revalidation
+failure must never block a save. Without this, published changes still
+show up on `cashlo-final`, just up to 60s later (its fetch-level
+`revalidate: 60`) instead of immediately.
+
+## Status (as of 2026-09-21) — deployed and live
+
+`cms.cashlo.app` is deployed (Vercel, GitHub-connected, auto-deploys on
+push to `master`) and confirmed working end-to-end against production:
+own database, own users, R2 media uploads, and `cashlo-final`'s
+`src/lib/blogApi.ts` is repointed here and rendering real posts on
+`cashlo.app/blog`.
+
+Known-fixed issues worth knowing about if they resurface:
+- `author` doesn't auto-populate for public API requests (by design —
+  `Users`' access rules block it); use `authorName` instead, not
+  `author.name`. See the field's comment in `Posts.ts`.
+- The slug-change redirect hook upserts and must never throw — it broke
+  publish entirely (`unique` constraint on `Redirects.from`) before that
+  fix.
+- Verify `NEXT_PUBLIC_CMS_URL` (on `cashlo-final`'s Vercel project) and
+  every `NEXT_PUBLIC_*` var here are set as **Plaintext/Config**, not
+  **Secret** — a `NEXT_PUBLIC_` var typed as Secret silently fails to
+  inline into the client build. Bit us twice already.
+
+## Not built yet
+
 - No content migration from `cashlo-backend`'s existing `Blog` collection
-  has happened. Until it does, `cashlo-backend`'s Blog API and
-  `cashlo-admin`'s Blogs tab remain the live source of truth — do not treat
-  this CMS as authoritative until that migration + the `cashlo-final`
-  frontend cutover (below) both happen.
-- `cashlo-final`'s `src/lib/blogApi.ts` still points at `cashlo-backend`.
-  It needs to be repointed at this CMS's REST/GraphQL API
-  (`NEXT_PUBLIC_SERVER_URL`) as part of the cutover — not done yet.
-- Once cutover happens, `cashlo-admin`'s Blogs tab
-  (`src/components/blogs/*`, `src/app/(dashboard)/blogs/*`) and
-  `cashlo-backend`'s `Blog` model/routes/service/controller should be
-  retired, to avoid two systems both silently claiming to own "the blogs."
+  has happened. If there's anything worth keeping there, it still needs to
+  be migrated in.
+- `cashlo-admin`'s Blogs tab (`src/components/blogs/*`,
+  `src/app/(dashboard)/blogs/*`) and `cashlo-backend`'s `Blog`
+  model/routes/service/controller are still live and unretired — two
+  systems now both nominally "own" blogs. Retire the old ones once
+  everyone's confirmed comfortable relying on this CMS.
+- Scheduled Publishing's `jobs.autoRun` cron (`payload.config.ts`) only
+  ticks while a long-running Node process is alive — **on Vercel's
+  serverless runtime this will not fire on its own in production**. Needs
+  an external trigger (e.g. a Vercel Cron Job hitting Payload's job-run
+  endpoint) before scheduled posts can be trusted to actually publish
+  themselves at the right time.
 - 404 Monitoring / Broken Link Detection from Harender's list are external
   tooling concerns (e.g. Search Console, an uptime/crawl service) — not
   something to build as a Payload collection or plugin.

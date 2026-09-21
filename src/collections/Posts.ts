@@ -1,5 +1,6 @@
 import type { CollectionConfig } from 'payload';
 import { convertLexicalToHTML, defaultHTMLConverters } from '@payloadcms/richtext-lexical/html';
+import { revalidateBlogFrontend } from '../utils/revalidateFrontend';
 
 const toHTML = (data: unknown) =>
   data ? convertLexicalToHTML({ data: data as any, converters: defaultHTMLConverters }) : '';
@@ -99,6 +100,23 @@ export const Posts: CollectionConfig = {
             req.payload.logger.error(`Failed to record redirect for slug change: ${(err as Error).message}`);
           }
         }
+      },
+      ({ doc, previousDoc }) => {
+        // On-demand ISR revalidation on cashlo-final, mirroring
+        // cashlo-backend's revalidateBlogFrontend — fires the moment an
+        // editor saves instead of waiting up to 60s for the fetch-level
+        // revalidate window. Best-effort/fire-and-forget: never awaited,
+        // never blocks the save.
+        void revalidateBlogFrontend(doc.slug);
+        if (previousDoc?.slug && previousDoc.slug !== doc.slug) {
+          void revalidateBlogFrontend(previousDoc.slug);
+        }
+        return doc;
+      },
+    ],
+    afterDelete: [
+      ({ doc }) => {
+        void revalidateBlogFrontend(doc.slug);
       },
     ],
   },
