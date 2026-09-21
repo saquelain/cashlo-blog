@@ -97,10 +97,26 @@ This repo's `Users` collection (`src/collections/Users.ts`) is a
 ## Scheduled Publishing
 
 Uses Payload's built-in `versions.drafts.schedulePublish` on `Posts`
-(`src/collections/Posts.ts`) plus the `jobs.autoRun` cron in
-`payload.config.ts` (runs every 5 min) that flips scheduled drafts to
-published. This is a native Payload feature, not custom code — don't
-reimplement it with a separate cron job.
+(`src/collections/Posts.ts`) — scheduling a post writes a job to Payload's
+internal `payload-jobs` collection (an auto-registered `schedulePublish`
+task), no custom code needed for that part.
+
+`jobs.autoRun` in `payload.config.ts` does NOT execute that job in
+production — its internal timer only fires on a long-running Node process,
+which Vercel's serverless runtime doesn't provide (kept only as a harmless
+local/self-hosted fallback). The actual trigger is an **external cron
+hitting `GET /api/payload-jobs/run`** — set up as a Render Cron Job (free
+tier), since the Vercel account here is on the free Hobby plan and Vercel
+Cron requires Pro for anything more frequent than once/day.
+
+That endpoint is protected by `jobs.access.run` (also in
+`payload.config.ts`) via a shared-secret query param — `CRON_SECRET` must
+match between this CMS's env and the Render Cron Job's configured URL:
+```
+GET https://cms.cashlo.app/api/payload-jobs/run?cronSecret=<CRON_SECRET>
+```
+Do not remove this access check or make the endpoint unauthenticated —
+without it, anyone on the internet could trigger job execution.
 
 ## Rich text -> HTML (for the consuming frontend)
 
@@ -167,12 +183,10 @@ Known-fixed issues worth knowing about if they resurface:
   model/routes/service/controller are still live and unretired — two
   systems now both nominally "own" blogs. Retire the old ones once
   everyone's confirmed comfortable relying on this CMS.
-- Scheduled Publishing's `jobs.autoRun` cron (`payload.config.ts`) only
-  ticks while a long-running Node process is alive — **on Vercel's
-  serverless runtime this will not fire on its own in production**. Needs
-  an external trigger (e.g. a Vercel Cron Job hitting Payload's job-run
-  endpoint) before scheduled posts can be trusted to actually publish
-  themselves at the right time.
+- The Render Cron Job that triggers scheduled-publish (see "Scheduled
+  Publishing" above) needs to actually be created in the Render dashboard
+  and `CRON_SECRET` set on both sides — the code/access-control side is
+  done, but the Render service itself isn't provisioned yet.
 - 404 Monitoring / Broken Link Detection from Harender's list are external
   tooling concerns (e.g. Search Console, an uptime/crawl service) — not
   something to build as a Payload collection or plugin.

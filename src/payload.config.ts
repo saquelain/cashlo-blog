@@ -67,6 +67,13 @@ export default buildConfig({
   ],
   // Required so `versions.drafts.schedulePublish` on Posts actually flips
   // scheduled drafts to published at the target time.
+  //
+  // `autoRun`'s internal timer only fires on a long-running Node process —
+  // it does NOT work on Vercel's serverless runtime (no process stays alive
+  // between requests), so it's kept here only as a harmless fallback for
+  // self-hosted/local use. The real trigger in production is an external
+  // cron (Render Cron Job) hitting GET /api/payload-jobs/run directly —
+  // see CLAUDE.md "Scheduled Publishing".
   jobs: {
     tasks: [],
     autoRun: [
@@ -76,5 +83,15 @@ export default buildConfig({
         queue: 'default',
       },
     ],
+    access: {
+      // The run endpoint has no logged-in user when hit by an external
+      // cron — authenticate it with a shared secret instead (query param,
+      // since Payload's /run endpoint is deliberately a GET so it can be
+      // used by simple cron pingers that can't send custom headers).
+      run: ({ req }) => {
+        const secret = req.query?.cronSecret;
+        return Boolean(secret) && secret === process.env.CRON_SECRET;
+      },
+    },
   },
 });
