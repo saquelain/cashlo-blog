@@ -1,0 +1,56 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { mongooseAdapter } from '@payloadcms/db-mongodb';
+import { lexicalEditor } from '@payloadcms/richtext-lexical';
+import { seoPlugin } from '@payloadcms/plugin-seo';
+import { buildConfig } from 'payload';
+
+import { Users } from './collections/Users';
+import { Media } from './collections/Media';
+import { Categories } from './collections/Categories';
+import { Posts } from './collections/Posts';
+import { Redirects } from './collections/Redirects';
+
+const filename = fileURLToPath(import.meta.url);
+const dirname = path.dirname(filename);
+
+export default buildConfig({
+  admin: {
+    user: Users.slug,
+  },
+  collections: [Users, Media, Categories, Posts, Redirects],
+  editor: lexicalEditor(),
+  secret: process.env.PAYLOAD_SECRET || '',
+  typescript: {
+    outputFile: path.resolve(dirname, 'payload-types.ts'),
+  },
+  db: mongooseAdapter({
+    // IMPORTANT: this must point at a database SEPARATE from cashlo-backend's
+    // main DB (see CLAUDE.md "Database isolation"). Do not reuse the same
+    // database name as cashlo-backend's MONGO_URI.
+    url: process.env.DATABASE_URI || '',
+  }),
+  plugins: [
+    seoPlugin({
+      collections: ['posts'],
+      uploadsCollection: 'media',
+      // Auto-generates the SEO tab (title/description/OG image) on Posts,
+      // pre-filled from title/excerpt/featuredImage but editable per-post —
+      // this covers "SEO Title", "Meta Description" and "OG Override".
+      generateTitle: ({ doc }: any) => (doc?.title ? `${doc.title} | Cashlo` : 'Cashlo'),
+      generateDescription: ({ doc }: any) => doc?.excerpt || '',
+    }),
+  ],
+  // Required so `versions.drafts.schedulePublish` on Posts actually flips
+  // scheduled drafts to published at the target time.
+  jobs: {
+    tasks: [],
+    autoRun: [
+      {
+        cron: '*/5 * * * *', // every 5 minutes
+        limit: 10,
+        queue: 'default',
+      },
+    ],
+  },
+});
