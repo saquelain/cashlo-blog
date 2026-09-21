@@ -160,13 +160,23 @@ failure must never block a save. Without this, published changes still
 show up on `cashlo-final`, just up to 60s later (its fetch-level
 `revalidate: 60`) instead of immediately.
 
-## Status (as of 2026-09-21) — deployed and live
+## Status (as of 2026-09-21) — deployed and live, scheduled publishing verified
 
 `cms.cashlo.app` is deployed (Vercel, GitHub-connected, auto-deploys on
 push to `master`) and confirmed working end-to-end against production:
 own database, own users, R2 media uploads, and `cashlo-final`'s
 `src/lib/blogApi.ts` is repointed here and rendering real posts on
-`cashlo.app/blog`.
+`cashlo.app/blog`. Scheduled publishing (see above) is live and was
+verified with a real test: a post scheduled for a specific time flipped
+from draft to published on its own via `cashlo-backend`'s cron, with no
+manual action — `CRON_SECRET`/`CMS_CRON_SECRET` are set on both sides.
+
+Two real posts exist in production right now: `7-ways-digital-payments...`
+(authored directly in this CMS) and
+`say-goodbye-to-paper-khatas-why-digital-credit-tracking-prevents-loss`
+(migrated by hand from `cashlo-backend`'s old `Blog` collection — that was
+the one piece of pre-existing published content worth keeping; see "Not
+built yet" below for what that migration didn't cover).
 
 Known-fixed issues worth knowing about if they resurface:
 - `author` doesn't auto-populate for public API requests (by design —
@@ -179,27 +189,40 @@ Known-fixed issues worth knowing about if they resurface:
   every `NEXT_PUBLIC_*` var here are set as **Plaintext/Config**, not
   **Secret** — a `NEXT_PUBLIC_` var typed as Secret silently fails to
   inline into the client build. Bit us twice already.
+- Automating this admin UI (browser driven, no direct DB/API access) is
+  fragile — `Return`/`Home`/`End` keys don't reliably register in the
+  Lexical editor or in plain text inputs; slash-command menus sometimes
+  don't render on the first attempt; misplaced clicks have silently
+  inserted text into the wrong field/paragraph and once corrupted a
+  published post's title (a trailing run of `s` characters — caught and
+  fixed, but it shipped to production briefly). If driving this admin UI
+  by automation again: prefer `find`/`read_page` refs and `form_input`
+  over raw coordinate clicks + keystrokes, verify each block with a
+  screenshot before moving to the next, and spot-check the actual saved
+  title/content afterward rather than trusting the last screenshot.
 
 ## Not built yet
 
-- No content migration from `cashlo-backend`'s existing `Blog` collection
-  has happened. If there's anything worth keeping there, it still needs to
-  be migrated in.
+- Only the one real published post was migrated from `cashlo-backend`'s
+  old `Blog` collection (see "Status" above) — its rich content was
+  manually rebuilt in the new editor, not programmatically converted, so
+  don't assume any remaining old-system content is safe to just delete;
+  check `cashlo-backend`'s `Blog` collection for anything else worth
+  keeping before retiring it.
 - `cashlo-admin`'s Blogs tab (`src/components/blogs/*`,
   `src/app/(dashboard)/blogs/*`) and `cashlo-backend`'s `Blog`
   model/routes/service/controller are still live and unretired — two
   systems now both nominally "own" blogs. Retire the old ones once
   everyone's confirmed comfortable relying on this CMS.
-- The scheduled-publish trigger (see "Scheduled Publishing" above) needs
-  `CRON_SECRET` set here and the matching `CMS_CRON_SECRET` set on
-  `cashlo-backend`'s Render service, then `cashlo-backend` redeployed —
-  the code on both sides is done, but the env vars aren't set in
-  production yet.
 - 404 Monitoring / Broken Link Detection from Harender's list are external
   tooling concerns (e.g. Search Console, an uptime/crawl service) — not
   something to build as a Payload collection or plugin.
 - The "MJ blog section" mentioned in Harender's email has no known repo in
   this workspace — still needs clarifying with him which project that is.
+- `Redirects.ts` is populated automatically on slug change, but
+  `cashlo-final` doesn't read it anywhere yet — an old slug that changed
+  still 404s on the public site instead of 301ing. Needs middleware or a
+  route handler in `cashlo-final` to actually consult this collection.
 
 ## Working conventions
 
