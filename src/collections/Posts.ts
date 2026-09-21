@@ -78,15 +78,26 @@ export const Posts: CollectionConfig = {
         // 301 Redirect on Slug Change (automatic) — if a published post's
         // slug changes, record the old -> new mapping in the `redirects`
         // collection so cashlo-final's middleware can 301 old URLs instead
-        // of 404ing them.
+        // of 404ing them. Upserts (a slug can change more than once, and
+        // `from` is unique) and never throws — redirect bookkeeping must
+        // never block the actual publish.
         if (previousDoc?.slug && previousDoc.slug !== doc.slug) {
-          await req.payload.create({
-            collection: 'redirects',
-            data: {
-              from: `/blog/${previousDoc.slug}`,
-              to: { url: `/blog/${doc.slug}` },
-            },
-          });
+          try {
+            const from = `/blog/${previousDoc.slug}`;
+            const to = { url: `/blog/${doc.slug}` };
+            const existing = await req.payload.find({
+              collection: 'redirects',
+              where: { from: { equals: from } },
+              limit: 1,
+            });
+            if (existing.docs[0]) {
+              await req.payload.update({ collection: 'redirects', id: existing.docs[0].id, data: { to } });
+            } else {
+              await req.payload.create({ collection: 'redirects', data: { from, to } });
+            }
+          } catch (err) {
+            req.payload.logger.error(`Failed to record redirect for slug change: ${(err as Error).message}`);
+          }
         }
       },
     ],
