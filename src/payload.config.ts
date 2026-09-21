@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url';
 import { mongooseAdapter } from '@payloadcms/db-mongodb';
 import { lexicalEditor } from '@payloadcms/richtext-lexical';
 import { seoPlugin } from '@payloadcms/plugin-seo';
+import { s3Storage } from '@payloadcms/storage-s3';
 import { buildConfig } from 'payload';
 
 import { Users } from './collections/Users';
@@ -39,6 +40,29 @@ export default buildConfig({
       // this covers "SEO Title", "Meta Description" and "OG Override".
       generateTitle: ({ doc }: any) => (doc?.title ? `${doc.title} | Cashlo` : 'Cashlo'),
       generateDescription: ({ doc }: any) => doc?.excerpt || '',
+    }),
+    // Reuses the same Cloudflare R2 account/bucket cashlo-backend already
+    // uploads blog/Aadhaar images to (see cashlo-backend/src/services/s3.service.js),
+    // scoped to its own `cms-media/` prefix so the two never collide.
+    s3Storage({
+      collections: {
+        media: {
+          prefix: 'cms-media',
+          // R2's public bucket URL, not the private S3 endpoint below —
+          // matches cashlo-backend's getPublicUrl() convention.
+          generateFileURL: ({ filename, prefix }) =>
+            `${process.env.R2_PUBLIC_URL}/${prefix ? `${prefix}/` : ''}${filename}`,
+        },
+      },
+      bucket: process.env.R2_BUCKET_NAME || 'cashlo-media',
+      config: {
+        region: 'auto',
+        endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+        credentials: {
+          accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+        },
+      },
     }),
   ],
   // Required so `versions.drafts.schedulePublish` on Posts actually flips

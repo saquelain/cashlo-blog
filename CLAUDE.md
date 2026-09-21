@@ -33,6 +33,23 @@ Payload-native users, reverse-proxied under a subdomain.**
   hardcode `cname.vercel-dns.com` from memory, copy it from Vercel's own
   domain settings screen.
 
+## Media storage (R2 — shared account, own prefix)
+
+`Media` uploads go to the **same Cloudflare R2 bucket** `cashlo-backend`
+already uses (`R2_ACCOUNT_ID`/`R2_BUCKET_NAME`/etc. — same env var names,
+see `.env.example`), configured via `@payloadcms/storage-s3` in
+`payload.config.ts`. This was necessary, not optional: Payload's default
+upload storage writes to local disk, which does not work on Vercel's
+serverless runtime (no persistent writable filesystem) — uploads 500'd in
+production until this was added.
+
+Scoped to its own `cms-media/` prefix inside that bucket (see the `prefix`
+option on the `media` collection in `s3Storage({...})`) so it never
+collides with `cashlo-backend`'s `blogs/` or `distributor/aadhaar/` keys.
+Unlike the database, object storage doesn't need a fully separate
+bucket/account for isolation — a distinct prefix is enough since there's no
+equivalent of Mongo's collection-name collision risk here.
+
 ## Database isolation (hard rule)
 
 `DATABASE_URI` in `.env` MUST point at a **different database name** than
