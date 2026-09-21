@@ -104,14 +104,21 @@ task), no custom code needed for that part.
 `jobs.autoRun` in `payload.config.ts` does NOT execute that job in
 production — its internal timer only fires on a long-running Node process,
 which Vercel's serverless runtime doesn't provide (kept only as a harmless
-local/self-hosted fallback). The actual trigger is an **external cron
-hitting `GET /api/payload-jobs/run`** — set up as a Render Cron Job (free
-tier), since the Vercel account here is on the free Hobby plan and Vercel
-Cron requires Pro for anything more frequent than once/day.
+local/self-hosted fallback). The actual trigger is **`cashlo-backend`
+pinging `GET /api/payload-jobs/run` every 5 minutes** via
+`src/jobs/triggerCmsScheduledPublish.job.js` (registered in
+`cashlo-backend/server.js` alongside its existing `reconcilePayments.job.js`
+cron). `cashlo-backend` already runs as a persistent Render Web Service
+with `node-cron` in use, so it does the pinging instead of standing up a
+separate paid Render Cron Job or an external free-tier pinger just for
+this one HTTP call — deliberately reuses infrastructure that already
+exists rather than adding a new moving part.
 
 That endpoint is protected by `jobs.access.run` (also in
-`payload.config.ts`) via a shared-secret query param — `CRON_SECRET` must
-match between this CMS's env and the Render Cron Job's configured URL:
+`payload.config.ts`) via a shared-secret query param — this CMS's
+`CRON_SECRET` env var must match `cashlo-backend`'s `CMS_CRON_SECRET` env
+var exactly (different names by coincidence of when each was added — see
+`cashlo-backend/src/config/environment.js`'s `cms` block):
 ```
 GET https://cms.cashlo.app/api/payload-jobs/run?cronSecret=<CRON_SECRET>
 ```
@@ -183,10 +190,11 @@ Known-fixed issues worth knowing about if they resurface:
   model/routes/service/controller are still live and unretired — two
   systems now both nominally "own" blogs. Retire the old ones once
   everyone's confirmed comfortable relying on this CMS.
-- The Render Cron Job that triggers scheduled-publish (see "Scheduled
-  Publishing" above) needs to actually be created in the Render dashboard
-  and `CRON_SECRET` set on both sides — the code/access-control side is
-  done, but the Render service itself isn't provisioned yet.
+- The scheduled-publish trigger (see "Scheduled Publishing" above) needs
+  `CRON_SECRET` set here and the matching `CMS_CRON_SECRET` set on
+  `cashlo-backend`'s Render service, then `cashlo-backend` redeployed —
+  the code on both sides is done, but the env vars aren't set in
+  production yet.
 - 404 Monitoring / Broken Link Detection from Harender's list are external
   tooling concerns (e.g. Search Console, an uptime/crawl service) — not
   something to build as a Payload collection or plugin.
