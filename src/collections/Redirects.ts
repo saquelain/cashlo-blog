@@ -5,7 +5,7 @@ import type { CollectionConfig } from 'payload';
 export const Redirects: CollectionConfig = {
   slug: 'redirects',
   access: { read: () => true },
-  admin: { useAsTitle: 'from' },
+  admin: { useAsTitle: 'from', group: 'Settings' },
   fields: [
     { name: 'from', type: 'text', required: true, unique: true, index: true },
     {

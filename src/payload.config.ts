@@ -112,6 +112,10 @@ export default buildConfig({
     seoPlugin({
       collections: ['posts'],
       uploadsCollection: 'media',
+      // Without this, the plugin appends its SEO fields flatly onto the end
+      // of the fields array instead of as an actual tab — it only merges
+      // into Posts.ts's own `tabs` field (fields[0]) when tabbedUI is on.
+      tabbedUI: true,
       // Auto-generates the SEO tab (title/description/OG image) on Posts,
       // pre-filled from title/excerpt/featuredImage but editable per-post —
       // this covers "SEO Title", "Meta Description" and "OG Override".

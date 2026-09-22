@@ -127,9 +127,11 @@ const resolveAuthor = async (siblingData: any, req: any) => {
 
 export const Posts: CollectionConfig = {
   slug: 'posts',
+  labels: { singular: 'Blog Post', plural: 'Blog Posts' },
   admin: {
     useAsTitle: 'title',
     defaultColumns: ['title', 'category', '_status', 'publishedAt'],
+    group: 'Content',
   },
   access: {
     read: ({ req: { user } }) => {
@@ -225,204 +227,226 @@ export const Posts: CollectionConfig = {
     ],
   },
   fields: [
-    // --- MANUAL: Basic content ---
-    { name: 'title', type: 'text', required: true },
+    // A `tabs` field as fields[0] is also what @payloadcms/plugin-seo looks
+    // for (see payload.config.ts) — when it finds one, it appends its own
+    // "SEO" tab onto this same array instead of injecting a second,
+    // separate tabs field, so Write/Cover/SEO render as one unified tab bar
+    // instead of stacking two tab groups on the page.
     {
-      name: 'slug',
-      type: 'text',
-      required: true,
-      unique: true,
-      index: true,
-      admin: { description: 'Auto-generated from the title. Edit to override (Slug Override).' },
-    },
-    { name: 'excerpt', type: 'textarea', required: true, maxLength: 500 },
-    {
-      name: 'content',
-      type: 'richText',
-      required: true,
-    },
-    {
-      // Pre-rendered HTML so cashlo-final never has to parse Lexical JSON
-      // or depend on @payloadcms/richtext-lexical itself.
-      name: 'contentHTML',
-      type: 'text',
-      virtual: true,
-      admin: { hidden: true },
-      hooks: { afterRead: [({ siblingData, req }) => toHTML(siblingData?.content, req)] },
-    },
-    {
-      // Blog LISTING CARD image only (the grid on /blog) — deliberately not
-      // reused for the hero banner or social share image below; an editor
-      // may want a tighter/simpler shot for the small card thumbnail than
-      // for a full-width hero. See `coverImage` for those.
-      name: 'featuredImage',
-      type: 'upload',
-      relationTo: 'media',
-      required: true,
-      admin: {
-        description:
-          'Shown on the blog listing page card only. Recommended ~800×500 (16:10) or ' +
-          'larger, subject centered — Payload crops this to the card\'s fixed aspect ratio, ' +
-          'so anything off-center gets cut. Alt text is set on the media asset itself once uploaded.',
-      },
-    },
-    {
-      // Full-width hero banner at the top of the post page, and the
-      // og:image/Twitter-card/Article-schema image fallback when no SEO-tab
-      // OG override is set — kept independent of `featuredImage` above so
-      // an editor can pick a wider/differently-cropped shot for a
-      // full-bleed hero than what works as a small card thumbnail. Optional:
-      // falls back to `featuredImage` on cashlo-final when left empty, so
-      // existing posts (and anyone who skips this) keep working.
-      name: 'coverImage',
-      type: 'upload',
-      relationTo: 'media',
-      admin: {
-        description:
-          'Optional — hero banner at the top of the post, and the social-share (OG) image. ' +
-          'Recommended ~1600×1000 (16:10) or larger, subject centered — this gets cropped ' +
-          'wider than the listing card, so a tight product/face shot can lose more here. ' +
-          'Leave empty to reuse the Featured Image above.',
-      },
-    },
-    {
-      name: 'author',
-      type: 'relationship',
-      relationTo: 'users',
-      required: true,
-    },
-    {
-      // Users' own access rules correctly block public reads (staff emails/
-      // roles shouldn't be exposed), which also blocks Payload from
-      // populating `author` for unauthenticated requests. Rather than loosen
-      // Users' security, denormalize the "Written by" display fields here via
-      // a privileged internal lookup — the public API never touches
-      // /api/users. One hook resolves the author doc once and every sibling
-      // virtual field below reads off it, so a "Written by" post doesn't
-      // need N separate lookups.
-      name: 'authorName',
-      type: 'text',
-      virtual: true,
-      admin: { hidden: true },
-      hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.name] },
-    },
-    {
-      name: 'authorJobTitle',
-      type: 'text',
-      virtual: true,
-      admin: { hidden: true },
-      hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.jobTitle] },
-    },
-    {
-      name: 'authorBio',
-      type: 'text',
-      virtual: true,
-      admin: { hidden: true },
-      hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.bio] },
-    },
-    {
-      name: 'authorLinkedinUrl',
-      type: 'text',
-      virtual: true,
-      admin: { hidden: true },
-      hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.linkedinUrl] },
-    },
-    {
-      name: 'authorAvatarUrl',
-      type: 'text',
-      virtual: true,
-      admin: { hidden: true },
-      hooks: {
-        afterRead: [
-          async ({ siblingData, req }) => {
-            const author = await resolveAuthor(siblingData, req);
-            const avatar = author?.avatar;
-            return avatar && typeof avatar === 'object' ? avatar.url : undefined;
-          },
-        ],
-      },
-    },
-    {
-      name: 'category',
-      type: 'relationship',
-      relationTo: 'categories',
-      required: true,
-    },
-    {
-      name: 'tags',
-      type: 'array',
-      fields: [{ name: 'tag', type: 'text', required: true }],
-    },
-
-    // --- MANUAL: FAQ Content ---
-    {
-      name: 'faqsTitle',
-      type: 'text',
-      defaultValue: 'Frequently Asked Questions',
-    },
-    {
-      name: 'faqs',
-      type: 'array',
-      fields: [
-        { name: 'question', type: 'text', required: true },
-        { name: 'answer', type: 'richText', required: true },
+      type: 'tabs',
+      tabs: [
         {
-          name: 'answerHTML',
-          type: 'text',
-          virtual: true,
-          admin: { hidden: true },
-          hooks: { afterRead: [({ siblingData, req }) => toHTML(siblingData?.answer, req)] },
-        },
-      ],
-    },
+          label: 'Write',
+          description: 'Craft the story readers will see on the blog.',
+          fields: [
+            // --- MANUAL: Basic content ---
+            { name: 'title', type: 'text', required: true },
+            {
+              name: 'slug',
+              type: 'text',
+              required: true,
+              unique: true,
+              index: true,
+              admin: { description: 'Auto-generated from the title. Edit to override (Slug Override).' },
+            },
+            { name: 'excerpt', type: 'textarea', required: true, maxLength: 500 },
+            {
+              name: 'content',
+              type: 'richText',
+              required: true,
+            },
+            {
+              // Pre-rendered HTML so cashlo-final never has to parse Lexical JSON
+              // or depend on @payloadcms/richtext-lexical itself.
+              name: 'contentHTML',
+              type: 'text',
+              virtual: true,
+              admin: { hidden: true },
+              hooks: { afterRead: [({ siblingData, req }) => toHTML(siblingData?.content, req)] },
+            },
+            {
+              name: 'author',
+              type: 'relationship',
+              relationTo: 'users',
+              required: true,
+            },
+            {
+              // Users' own access rules correctly block public reads (staff emails/
+              // roles shouldn't be exposed), which also blocks Payload from
+              // populating `author` for unauthenticated requests. Rather than loosen
+              // Users' security, denormalize the "Written by" display fields here via
+              // a privileged internal lookup — the public API never touches
+              // /api/users. One hook resolves the author doc once and every sibling
+              // virtual field below reads off it, so a "Written by" post doesn't
+              // need N separate lookups.
+              name: 'authorName',
+              type: 'text',
+              virtual: true,
+              admin: { hidden: true },
+              hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.name] },
+            },
+            {
+              name: 'authorJobTitle',
+              type: 'text',
+              virtual: true,
+              admin: { hidden: true },
+              hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.jobTitle] },
+            },
+            {
+              name: 'authorBio',
+              type: 'text',
+              virtual: true,
+              admin: { hidden: true },
+              hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.bio] },
+            },
+            {
+              name: 'authorLinkedinUrl',
+              type: 'text',
+              virtual: true,
+              admin: { hidden: true },
+              hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.linkedinUrl] },
+            },
+            {
+              name: 'authorAvatarUrl',
+              type: 'text',
+              virtual: true,
+              admin: { hidden: true },
+              hooks: {
+                afterRead: [
+                  async ({ siblingData, req }) => {
+                    const author = await resolveAuthor(siblingData, req);
+                    const avatar = author?.avatar;
+                    return avatar && typeof avatar === 'object' ? avatar.url : undefined;
+                  },
+                ],
+              },
+            },
+            {
+              name: 'category',
+              type: 'relationship',
+              relationTo: 'categories',
+              required: true,
+            },
+            {
+              name: 'tags',
+              type: 'array',
+              fields: [{ name: 'tag', type: 'text', required: true }],
+            },
 
-    // --- MANUAL: Internal Links ---
-    {
-      name: 'internalLinks',
-      type: 'array',
-      admin: { description: 'Hand-picked links to other posts/pages to surface in-content or in a sidebar block.' },
-      fields: [
-        { name: 'label', type: 'text', required: true },
-        { name: 'url', type: 'text', required: true },
-      ],
-    },
+            // --- MANUAL: FAQ Content ---
+            {
+              name: 'faqsTitle',
+              type: 'text',
+              defaultValue: 'Frequently Asked Questions',
+            },
+            {
+              name: 'faqs',
+              type: 'array',
+              fields: [
+                { name: 'question', type: 'text', required: true },
+                { name: 'answer', type: 'richText', required: true },
+                {
+                  name: 'answerHTML',
+                  type: 'text',
+                  virtual: true,
+                  admin: { hidden: true },
+                  hooks: { afterRead: [({ siblingData, req }) => toHTML(siblingData?.answer, req)] },
+                },
+              ],
+            },
 
-    // --- MANUAL: Related Blogs (manual override; automatic fallback lives in cashlo-final) ---
-    {
-      name: 'relatedPosts',
-      type: 'relationship',
-      relationTo: 'posts',
-      hasMany: true,
-      maxRows: 3,
-      admin: { description: 'Leave empty to let the frontend auto-pick recent posts from the same category.' },
-    },
+            // --- MANUAL: Internal Links ---
+            {
+              name: 'internalLinks',
+              type: 'array',
+              admin: { description: 'Hand-picked links to other posts/pages to surface in-content or in a sidebar block.' },
+              fields: [
+                { name: 'label', type: 'text', required: true },
+                { name: 'url', type: 'text', required: true },
+              ],
+            },
 
-    // --- MANUAL: Advanced SEO overrides not covered by the SEO plugin tab ---
-    {
-      type: 'collapsible',
-      label: 'Advanced SEO',
-      fields: [
-        {
-          name: 'focusKeyword',
-          type: 'text',
-          admin: { description: 'Reference only for the editor — not rendered on the page.' },
+            // --- MANUAL: Related Blogs (manual override; automatic fallback lives in cashlo-final) ---
+            {
+              name: 'relatedPosts',
+              type: 'relationship',
+              relationTo: 'posts',
+              hasMany: true,
+              maxRows: 3,
+              admin: { description: 'Leave empty to let the frontend auto-pick recent posts from the same category.' },
+            },
+
+            // --- MANUAL: Advanced SEO overrides not covered by the SEO plugin tab ---
+            {
+              type: 'collapsible',
+              label: 'Advanced SEO',
+              fields: [
+                {
+                  name: 'focusKeyword',
+                  type: 'text',
+                  admin: { description: 'Reference only for the editor — not rendered on the page.' },
+                },
+                {
+                  name: 'canonicalUrlOverride',
+                  type: 'text',
+                  admin: { description: 'Leave empty to use the default https://www.cashlo.app/blog/<slug> canonical URL.' },
+                },
+                {
+                  name: 'robots',
+                  type: 'select',
+                  defaultValue: 'index,follow',
+                  options: ROBOTS_OPTIONS,
+                },
+                {
+                  name: 'robotsNoarchive',
+                  type: 'checkbox',
+                  defaultValue: false,
+                  label: 'Add noarchive',
+                },
+              ],
+            },
+          ],
         },
         {
-          name: 'canonicalUrlOverride',
-          type: 'text',
-          admin: { description: 'Leave empty to use the default https://www.cashlo.app/blog/<slug> canonical URL.' },
-        },
-        {
-          name: 'robots',
-          type: 'select',
-          defaultValue: 'index,follow',
-          options: ROBOTS_OPTIONS,
-        },
-        {
-          name: 'robotsNoarchive',
-          type: 'checkbox',
-          defaultValue: false,
-          label: 'Add noarchive',
+          label: 'Cover',
+          description: 'Images shown on the blog listing card and post hero.',
+          fields: [
+            {
+              // Blog LISTING CARD image only (the grid on /blog) — deliberately not
+              // reused for the hero banner or social share image below; an editor
+              // may want a tighter/simpler shot for the small card thumbnail than
+              // for a full-width hero. See `coverImage` for those.
+              name: 'featuredImage',
+              type: 'upload',
+              relationTo: 'media',
+              required: true,
+              admin: {
+                description:
+                  'Shown on the blog listing page card only. Recommended ~800×500 (16:10) or ' +
+                  'larger, subject centered — Payload crops this to the card\'s fixed aspect ratio, ' +
+                  'so anything off-center gets cut. Alt text is set on the media asset itself once uploaded.',
+              },
+            },
+            {
+              // Full-width hero banner at the top of the post page, and the
+              // og:image/Twitter-card/Article-schema image fallback when no SEO-tab
+              // OG override is set — kept independent of `featuredImage` above so
+              // an editor can pick a wider/differently-cropped shot for a
+              // full-bleed hero than what works as a small card thumbnail. Optional:
+              // falls back to `featuredImage` on cashlo-final when left empty, so
+              // existing posts (and anyone who skips this) keep working.
+              name: 'coverImage',
+              type: 'upload',
+              relationTo: 'media',
+              admin: {
+                description:
+                  'Optional — hero banner at the top of the post, and the social-share (OG) image. ' +
+                  'Recommended ~1600×1000 (16:10) or larger, subject centered — this gets cropped ' +
+                  'wider than the listing card, so a tight product/face shot can lose more here. ' +
+                  'Leave empty to reuse the Featured Image above.',
+              },
+            },
+          ],
         },
       ],
     },

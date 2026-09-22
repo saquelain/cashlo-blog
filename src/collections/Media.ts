@@ -8,6 +8,8 @@ const MAX_UPLOAD_BYTES = 2 * 1024 * 1024; // 2MB
 // on upload — no manual admin work needed for the resize/format part).
 export const Media: CollectionConfig = {
   slug: 'media',
+  labels: { singular: 'Media', plural: 'Media Library' },
+  admin: { group: 'Content' },
   access: {
     read: () => true, // public site needs to fetch images without auth
   },

@@ -8,6 +8,7 @@ export const Users: CollectionConfig = {
   auth: true,
   admin: {
     useAsTitle: 'email',
+    group: 'Content',
   },
   access: {
     // Only logged-in CMS users can view the user list; nobody can self-register.
