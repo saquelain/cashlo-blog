@@ -25,6 +25,20 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-');
 
+// Resolves the post's `author` relationship to a full user doc (avatar
+// included, depth 1) via a privileged internal lookup, regardless of the
+// requester's own read access to `users`. Payload doesn't cache across
+// sibling virtual-field hooks within one request, so this refetches per
+// field — acceptable here since it's a single indexed findByID, not a query.
+const resolveAuthor = async (siblingData: any, req: any) => {
+  const author = siblingData?.author;
+  if (!author) return null;
+  if (author && typeof author === 'object' && 'name' in author) return author;
+  return req.payload
+    .findByID({ collection: 'users', id: author, depth: 1, overrideAccess: true })
+    .catch(() => null);
+};
+
 export const Posts: CollectionConfig = {
   slug: 'posts',
   admin: {
@@ -167,22 +181,49 @@ export const Posts: CollectionConfig = {
       // Users' own access rules correctly block public reads (staff emails/
       // roles shouldn't be exposed), which also blocks Payload from
       // populating `author` for unauthenticated requests. Rather than loosen
-      // Users' security, denormalize just the display name here via a
-      // privileged internal lookup — the public API never touches /api/users.
+      // Users' security, denormalize the "Written by" display fields here via
+      // a privileged internal lookup — the public API never touches
+      // /api/users. One hook resolves the author doc once and every sibling
+      // virtual field below reads off it, so a "Written by" post doesn't
+      // need N separate lookups.
       name: 'authorName',
+      type: 'text',
+      virtual: true,
+      admin: { hidden: true },
+      hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.name] },
+    },
+    {
+      name: 'authorJobTitle',
+      type: 'text',
+      virtual: true,
+      admin: { hidden: true },
+      hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.jobTitle] },
+    },
+    {
+      name: 'authorBio',
+      type: 'text',
+      virtual: true,
+      admin: { hidden: true },
+      hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.bio] },
+    },
+    {
+      name: 'authorLinkedinUrl',
+      type: 'text',
+      virtual: true,
+      admin: { hidden: true },
+      hooks: { afterRead: [async ({ siblingData, req }) => (await resolveAuthor(siblingData, req))?.linkedinUrl] },
+    },
+    {
+      name: 'authorAvatarUrl',
       type: 'text',
       virtual: true,
       admin: { hidden: true },
       hooks: {
         afterRead: [
           async ({ siblingData, req }) => {
-            const author = siblingData?.author;
-            if (author && typeof author === 'object') return author.name;
-            if (!author) return undefined;
-            const user = await req.payload
-              .findByID({ collection: 'users', id: author, depth: 0, overrideAccess: true })
-              .catch(() => null);
-            return user?.name;
+            const author = await resolveAuthor(siblingData, req);
+            const avatar = author?.avatar;
+            return avatar && typeof avatar === 'object' ? avatar.url : undefined;
           },
         ],
       },

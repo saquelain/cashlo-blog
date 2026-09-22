@@ -32,5 +32,34 @@ export const Users: CollectionConfig = {
         { label: 'Editor', value: 'editor' },
       ],
     },
+    {
+      type: 'collapsible',
+      label: 'Blog Author Profile',
+      admin: {
+        description:
+          'Shown on the public "Written by" section of any post this user is set as author on — filled in once per person, not per post.',
+      },
+      fields: [
+        {
+          name: 'jobTitle',
+          type: 'text',
+          admin: { description: 'e.g. "CPaaS Content Strategist at Azmarq"' },
+        },
+        {
+          name: 'bio',
+          type: 'textarea',
+        },
+        {
+          name: 'linkedinUrl',
+          type: 'text',
+          admin: { description: 'Full profile URL, e.g. https://linkedin.com/in/...' },
+        },
+        {
+          name: 'avatar',
+          type: 'upload',
+          relationTo: 'media',
+        },
+      ],
+    },
   ],
 };
