@@ -1,9 +1,95 @@
-import type { CollectionConfig } from 'payload';
-import { convertLexicalToHTML, defaultHTMLConverters } from '@payloadcms/richtext-lexical/html';
+import type { CollectionConfig, PayloadRequest } from 'payload';
+import { convertLexicalToHTML, defaultHTMLConverters, UploadHTMLConverter } from '@payloadcms/richtext-lexical/html';
 import { revalidateBlogFrontend } from '../utils/revalidateFrontend';
 
-const toHTML = (data: unknown) =>
-  data ? convertLexicalToHTML({ data: data as any, converters: defaultHTMLConverters }) : '';
+// Pixel caps matching the `displayWidth` options on the UploadFeature config
+// in payload.config.ts — kept here instead of shared, since this is the only
+// place either side of that config is actually consumed.
+const DISPLAY_WIDTH_PX: Record<string, number> = { small: 400, medium: 700 };
+// Left/right float a non-full image so text wraps around it, matching the
+// classic blog-editor convention (WordPress's alignleft/alignright do the
+// same thing) — a Full-width image ignores alignment since there's no room
+// beside it. Float needs an explicit width to size correctly (unlike the
+// centered case, which can just use max-width), so an aligned image with no
+// displayWidth chosen still gets a sane default rather than floating at 100%.
+const FLOAT_DEFAULT_PX = 320;
+
+// The default UploadHTMLConverter always renders an inline image at its
+// full original size, block-level — it has no concept of the
+// `displayWidth`/`alignment` fields we added to the upload node (see
+// payload.config.ts), so without this override, those per-image controls an
+// editor picks in the admin UI would be saved but silently have zero effect
+// on the published page.
+const defaultUploadConverter = UploadHTMLConverter.upload as (args: { node: any; providedStyleTag: string }) => string;
+
+const uploadConverterWithLayout = {
+  upload: (args: { node: any; providedStyleTag: string }) => {
+    const html = defaultUploadConverter(args);
+    const fields = args.node.fields ?? {};
+    const px = DISPLAY_WIDTH_PX[fields.displayWidth];
+    const alignment = fields.alignment;
+
+    if (alignment === 'left' || alignment === 'right') {
+      const width = px ?? FLOAT_DEFAULT_PX;
+      if (fields.wrapText === false) {
+        // Positioned to one side, but not floated — no clearfix concerns,
+        // and whatever comes next in the content just stacks below it
+        // instead of wrapping alongside it. A block box already starts at
+        // the left edge by default, so only Right needs an explicit push.
+        const margin = alignment === 'left' ? '0 0 1rem 0' : '0 0 1rem auto';
+        return `<div style="width:${width}px;margin:${margin};">${html}</div>`;
+      }
+      const floatMargin = alignment === 'left' ? '0 1.5rem 1rem 0' : '0 0 1rem 1.5rem';
+      return `<div style="float:${alignment};width:${width}px;margin:${floatMargin};">${html}</div>`;
+    }
+
+    // Centered (explicit or default) — full width needs no wrapper at all.
+    return px ? `<div style="max-width:${px}px;margin:0 auto;">${html}</div>` : html;
+  },
+};
+
+const htmlConverters = { ...defaultHTMLConverters, ...uploadConverterWithLayout };
+
+// The HTML converter trusts that any embedded upload node (an inline image
+// dropped into the editor) is *already* populated in memory by the time
+// this hook runs — if it isn't yet (a real timing/ordering issue with
+// virtual-field hooks, not something under our control), its upload
+// converter silently returns '' for that node instead of erroring, so the
+// image just vanishes from contentHTML with no trace. Confirmed against a
+// real post where an inline image was present in the stored Lexical JSON
+// (with a valid R2 url) but missing entirely from the rendered contentHTML.
+//
+// The "correct" fix on paper is @payloadcms/richtext-lexical's async
+// converter (convertLexicalToHTMLAsync + getPayloadPopulateFn), which
+// resolves each upload node on demand instead of trusting ambient state —
+// but calling it from inside this exact hook deadlocks: it shares Payload's
+// per-request population-promise tracking, and this hook runs *as part of*
+// the very population cycle that promise is waiting on. So instead we walk
+// the tree ourselves and resolve any un-populated upload node with a plain,
+// independent findByID (nothing shared with Payload's internal population
+// machinery, so nothing to deadlock on), then hand the now-fully-resolved
+// tree to the ordinary sync converter.
+const resolveUploadNodes = async (node: any, req: PayloadRequest): Promise<void> => {
+  if (!node || typeof node !== 'object') return;
+  if (node.type === 'upload' && node.relationTo && typeof node.value !== 'object') {
+    node.value = await req.payload
+      .findByID({ collection: node.relationTo, id: node.value, overrideAccess: true, depth: 0 })
+      .catch(() => null);
+  }
+  const children = node.children;
+  if (Array.isArray(children)) {
+    await Promise.all(children.map((child) => resolveUploadNodes(child, req)));
+  }
+};
+
+const toHTML = async (data: unknown, req: PayloadRequest) => {
+  if (!data) return '';
+  // Deep-clone first — mutating siblingData directly could interfere with
+  // Payload's own in-flight population/serialization of the same field.
+  const tree = JSON.parse(JSON.stringify(data));
+  await resolveUploadNodes(tree.root, req);
+  return convertLexicalToHTML({ data: tree, converters: htmlConverters });
+};
 
 // Maps 1:1 onto Harender's SEO requirements doc (2026-09-21 email).
 // MANUAL fields are editable in the admin UI below.
@@ -162,14 +248,25 @@ export const Posts: CollectionConfig = {
       type: 'text',
       virtual: true,
       admin: { hidden: true },
-      hooks: { afterRead: [({ siblingData }) => toHTML(siblingData?.content)] },
+      hooks: { afterRead: [({ siblingData, req }) => toHTML(siblingData?.content, req)] },
     },
     {
+      // Used as: the blog listing card image, the full-width hero banner at
+      // the top of the post page (cashlo-final renders it from the `hero`
+      // size below), and the og:image/Article-schema image fallback when no
+      // SEO-tab OG override is set. One upload serves all of these via
+      // Media.ts's generated sizes — no separate hero-image field needed.
       name: 'featuredImage',
       type: 'upload',
       relationTo: 'media',
       required: true,
-      admin: { description: 'Alt text is set on the media asset itself once uploaded.' },
+      admin: {
+        description:
+          'Recommended ~1600×1000 (16:10) or larger. Keep the subject centered — ' +
+          'Payload crops this to several fixed-aspect sizes (hero banner, listing card, ' +
+          'social share image), so anything off-center gets cut on the tighter crops. ' +
+          'Alt text is set on the media asset itself once uploaded.',
+      },
     },
     {
       name: 'author',
@@ -257,7 +354,7 @@ export const Posts: CollectionConfig = {
           type: 'text',
           virtual: true,
           admin: { hidden: true },
-          hooks: { afterRead: [({ siblingData }) => toHTML(siblingData?.answer)] },
+          hooks: { afterRead: [({ siblingData, req }) => toHTML(siblingData?.answer, req)] },
         },
       ],
     },

@@ -1,7 +1,8 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
+import sharp from 'sharp';
 import { mongooseAdapter } from '@payloadcms/db-mongodb';
-import { lexicalEditor, EXPERIMENTAL_TableFeature } from '@payloadcms/richtext-lexical';
+import { lexicalEditor, EXPERIMENTAL_TableFeature, UploadFeature } from '@payloadcms/richtext-lexical';
 import { seoPlugin } from '@payloadcms/plugin-seo';
 import { s3Storage } from '@payloadcms/storage-s3';
 import { buildConfig } from 'payload';
@@ -16,6 +17,14 @@ const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
 
 export default buildConfig({
+  // Payload 3 doesn't pick up `sharp` just from it being a dependency — it
+  // must be handed in explicitly, or every `imageSizes`/`formatOptions`
+  // config on an upload collection (Media.ts) silently no-ops (logged only
+  // as a easy-to-miss startup warning, not an error). Every image uploaded
+  // before this line existed was stored completely unprocessed — original
+  // format, original dimensions, no thumbnail/card/og/cardAvif sizes at
+  // all — regardless of what Media.ts's config said.
+  sharp,
   admin: {
     user: Users.slug,
   },
@@ -28,7 +37,60 @@ export default buildConfig({
   // knows how to render its TableNode to <table>, so Posts.ts's toHTML()
   // needs no changes to pick this up.
   editor: lexicalEditor({
-    features: ({ defaultFeatures }) => [...defaultFeatures, EXPERIMENTAL_TableFeature()],
+    features: ({ defaultFeatures }) => [
+      // Swap the default UploadFeature (no per-image controls) for one with
+      // `displayWidth`/`alignment` fields, so editors can size and position
+      // an inline image instead of it always rendering full-width, centered
+      // — Posts.ts's custom HTML converter (see its comment) reads both to
+      // build the output.
+      ...defaultFeatures.filter((feature) => feature.key !== 'upload'),
+      UploadFeature({
+        collections: {
+          media: {
+            fields: [
+              {
+                name: 'displayWidth',
+                type: 'select',
+                defaultValue: 'full',
+                options: [
+                  { label: 'Small', value: 'small' },
+                  { label: 'Medium', value: 'medium' },
+                  { label: 'Full width (default)', value: 'full' },
+                ],
+                admin: {
+                  description: 'How wide this image renders on the published post. Click the image in the editor to change it.',
+                },
+              },
+              {
+                name: 'alignment',
+                type: 'select',
+                defaultValue: 'center',
+                options: [
+                  { label: 'Left', value: 'left' },
+                  { label: 'Center (default)', value: 'center' },
+                  { label: 'Right', value: 'right' },
+                ],
+                admin: {
+                  description:
+                    'Left/Right only has a visible effect on a Small or Medium image — a Full width image has no room beside it to align within.',
+                },
+              },
+              {
+                name: 'wrapText',
+                type: 'checkbox',
+                defaultValue: true,
+                admin: {
+                  description: 'Only applies when Alignment is Left or Right. On: body text flows around the image. Off: the image sits to that side on its own line, text continues below it as normal.',
+                  condition: (_: unknown, siblingData: { alignment?: string }) =>
+                    siblingData?.alignment === 'left' || siblingData?.alignment === 'right',
+                },
+              },
+            ],
+          },
+        },
+      }),
+      EXPERIMENTAL_TableFeature(),
+    ],
   }),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
