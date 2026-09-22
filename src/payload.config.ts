@@ -125,6 +125,17 @@ export default buildConfig({
             `${process.env.R2_PUBLIC_URL}/${prefix ? `${prefix}/` : ''}${filename}`,
         },
       },
+      // Without this, Payload writes every upload to local disk in ADDITION
+      // to R2, regardless of whether the R2 leg succeeds — on Vercel's
+      // serverless runtime that local copy is ephemeral and vanishes
+      // between invocations, but the Media doc still gets created as if the
+      // upload fully succeeded. That's exactly how one blog post ended up
+      // with a Media record pointing at an R2 URL that 404s: the file only
+      // ever existed on local disk (from a local dev session) and was later
+      // deleted, with no surviving R2 copy. With local storage disabled,
+      // Payload surfaces an R2 upload failure as a real error instead of
+      // silently succeeding with a broken reference.
+      disableLocalStorage: true,
       bucket: process.env.R2_BUCKET_NAME || 'cashlo-media',
       config: {
         region: 'auto',

@@ -7,3 +7,9 @@ node_modules
 src/payload-types.ts
 tsconfig.tsbuildinfo
 next-env.d.ts
+
+# Media uploads must live in R2 only (see disableLocalStorage in
+# payload.config.ts) - this folder should never exist in a working copy
+# going forward, but is ignored defensively in case Payload or a local dev
+# run ever writes here again.
+media/
