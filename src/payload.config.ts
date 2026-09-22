@@ -1,7 +1,7 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { mongooseAdapter } from '@payloadcms/db-mongodb';
-import { lexicalEditor } from '@payloadcms/richtext-lexical';
+import { lexicalEditor, EXPERIMENTAL_TableFeature } from '@payloadcms/richtext-lexical';
 import { seoPlugin } from '@payloadcms/plugin-seo';
 import { s3Storage } from '@payloadcms/storage-s3';
 import { buildConfig } from 'payload';
@@ -20,7 +20,16 @@ export default buildConfig({
     user: Users.slug,
   },
   collections: [Users, Media, Categories, Posts, Redirects],
-  editor: lexicalEditor(),
+  // Table support (/table slash command, and pasting an HTML/Google Docs
+  // table in as an actual table instead of flattened text) isn't in
+  // Payload's default Lexical feature set — EXPERIMENTAL_TableFeature is an
+  // opt-in "recommended default" per Payload's own docs, not actually
+  // unstable; @payloadcms/richtext-lexical's defaultHTMLConverters already
+  // knows how to render its TableNode to <table>, so Posts.ts's toHTML()
+  // needs no changes to pick this up.
+  editor: lexicalEditor({
+    features: ({ defaultFeatures }) => [...defaultFeatures, EXPERIMENTAL_TableFeature()],
+  }),
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
     outputFile: path.resolve(dirname, 'payload-types.ts'),
