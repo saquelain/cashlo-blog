@@ -1,4 +1,7 @@
 import type { CollectionConfig } from 'payload';
+import { APIError } from 'payload';
+
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024; // 2MB
 
 // Covers: Featured Image, Image Alt Text, Image Compression, WebP/AVIF,
 // Responsive Images (via Payload's imageSizes + Sharp, generated automatically
@@ -7,6 +10,27 @@ export const Media: CollectionConfig = {
   slug: 'media',
   access: {
     read: () => true, // public site needs to fetch images without auth
+  },
+  hooks: {
+    // There's no per-collection file-size option on Payload's UploadConfig
+    // (confirmed against its type defs) — this is the documented way to
+    // enforce one. Runs before the file is handed to the S3/R2 adapter, for
+    // both `create` (new upload) and `update` (replacing an existing Media
+    // doc's file), so an oversized file never reaches storage. Covers every
+    // upload path that goes through this collection — the admin panel's own
+    // upload UI, the Lexical editor's inline image feature, and the REST
+    // API directly — since they all funnel through this same create/update
+    // operation, not just one of them.
+    beforeOperation: [
+      ({ req, operation }) => {
+        if ((operation === 'create' || operation === 'update') && req.file && req.file.size > MAX_UPLOAD_BYTES) {
+          throw new APIError(
+            `Image is too large (${(req.file.size / (1024 * 1024)).toFixed(1)}MB). Maximum allowed size is 2MB.`,
+            400,
+          );
+        }
+      },
+    ],
   },
   fields: [
     {
