@@ -81,10 +81,53 @@ This repo's `Users` collection (`src/collections/Users.ts`) is a
   are computed by `cashlo-final` at render time from fields that do live
   here (title, excerpt, faqs, author, dates). Don't duplicate them as stored
   fields.
-- **`Media.ts`** — featured images + inline content images. `alt` is
-  required at upload time (covers "Image Alt Text"). `imageSizes` +
-  `formatOptions: { format: 'webp' }` cover compression/WebP/responsive
-  images automatically — no per-post manual work.
+  - **`featuredImage` vs `coverImage`** are deliberately separate upload
+    fields, not one reused image: `featuredImage` (required) is the blog
+    listing card thumbnail only; `coverImage` (optional) is the full-width
+    hero banner at the top of the post + the og:image/Twitter/Article-schema
+    social image, falling back to `featuredImage` on `cashlo-final` when left
+    empty. Don't collapse these back into one field — an editor may
+    reasonably want a tighter shot for the small card than for a full-bleed
+    hero, and the size guidance in each field's `admin.description` differs
+    accordingly (~800×500 for the card, ~1600×1000+ for the cover/hero).
+- **`Media.ts`** — featured/cover images + inline content images.
+  - `alt` required at upload time (covers "Image Alt Text").
+  - `focalPoint: true` lets an editor drag a crosshair over the uploaded
+    image marking the actual subject; Payload's crop then centers on that
+    point instead of the image's literal geometric center whenever a size's
+    aspect ratio doesn't match the source's. This is the actual fix for "the
+    listing card cropped off the wrong part of my photo" — deliberately not
+    solved by switching the frontend to `object-fit: contain`, which trades
+    that problem for empty letterbox bars (or a non-uniform grid) in every
+    card instead. Existing uploads default to dead-center (50/50) until
+    someone sets a focal point on them.
+  - `imageSizes`: `thumbnail`/`card`/`og`/`hero`, each **with its own**
+    `formatOptions: { format: 'webp' }` — the top-level `formatOptions` only
+    converts the original/base upload, Payload does not fall back to it per
+    size (confirmed against Payload's own resize source), so a size without
+    its own `formatOptions` is generated in the source's original format,
+    silently never webp. `cardAvif`/`heroAvif` are AVIF siblings of the two
+    highest-visibility sizes only (the blog listing grid, and every post's
+    own hero) — `og` deliberately stays plain webp/original since social
+    crawlers (WhatsApp, older Facebook) often mishandle even WebP, let alone
+    AVIF. `image/avif` is in `mimeTypes` for the *generated* AVIF sizes' own
+    output, not upload input — Payload validates every generated size's
+    resulting MIME type against that same allowlist, so without it any
+    upload large enough to actually produce a `cardAvif`/`heroAvif` size
+    fails validation on that size and the whole upload is rejected.
+  - **`sharp` must be passed into `buildConfig({ sharp, ... })` in
+    `payload.config.ts` — being an installed dependency is not enough.**
+    Payload 3 doesn't auto-detect it. Without this, every `imageSizes`/
+    `formatOptions` config above silently no-ops (logged only as an
+    easy-to-miss startup warning, "Image resizing is enabled... but sharp
+    not installed" — misleading, since it *is* installed, just not wired
+    in) — every image uploaded while this is missing is stored completely
+    raw: original format, original dimensions, no sized variants at all,
+    `sizes.*.url` all `null`. This bit us once already; if it resurfaces
+    (e.g. someone "cleans up" an unused-looking import), every image
+    uploaded since has to be re-uploaded or backfilled through a script —
+    Payload doesn't retroactively reprocess existing files when the config
+    is fixed.
 - **`Categories.ts`** — flat category list (name + slug), same shape as
   `cashlo-backend`'s `Category` model conceptually, but a separate
   collection/data — not shared or synced.
@@ -97,6 +140,16 @@ This repo's `Users` collection (`src/collections/Users.ts`) is a
   renamed more than once resolves via multiple sequential redirect hops,
   not a single direct one — no chain-resolution logic, deliberately, since
   that's a rare edge case not worth the complexity.
+- **`Users.ts`** — besides CMS login, has a "Blog Author Profile"
+  collapsible (`jobTitle`, `bio`, `linkedinUrl`, `avatar`) filled in once per
+  person, not per post. `Posts.ts` denormalizes these (same pattern as
+  `authorName` — see "Rich text -> HTML" below for why denormalization is
+  necessary at all) into virtual `authorJobTitle`/`authorBio`/
+  `authorLinkedinUrl`/`authorAvatarUrl` fields, which `cashlo-final` reads to
+  render a "Written by" card under every post. It's per-*author*, not
+  per-*post*: fill in a person's profile once and every post (old or new)
+  they're credited on picks it up immediately, since it's computed live at
+  read time, not stored on the post.
 
 ## Scheduled Publishing
 
@@ -141,6 +194,45 @@ deps — `payload`, `@payloadcms/next`, etc.) confined to this repo.
 response and `dangerouslySetInnerHTML` them directly — it must NOT install
 `@payloadcms/richtext-lexical` itself or try to parse the raw `content`/
 `answer` Lexical JSON field.
+
+**Inline images can silently vanish from `contentHTML` — do not "fix" this
+with the async converter.** The sync `UploadHTMLConverter` trusts that an
+embedded upload node (an inline image dropped into the editor) is *already*
+populated in memory by the time this hook runs; if it isn't yet (a real
+timing/ordering issue between this virtual field's `afterRead` hook and
+Payload's own richText population, not something under our control), it
+silently returns `''` for that node — no error, the image just disappears
+from the rendered HTML. `toHTML()` in `Posts.ts` works around this by
+walking the Lexical tree itself and resolving any un-populated upload node
+via a plain, independent `req.payload.findByID` before handing it to the
+converter. **Do not switch this to `@payloadcms/richtext-lexical`'s own
+"correct" fix** (`convertLexicalToHTMLAsync` + `getPayloadPopulateFn`) — it
+shares Payload's per-request population-promise tracking, and calling it
+from inside this exact hook deadlocks the request entirely, because the
+hook runs *as part of* the very population cycle that promise is waiting
+on. Confirmed by reproducing it: an isolated script calling it just hung
+forever with zero output until killed.
+
+**Inline images also support per-image layout** (size + alignment) via a
+custom `UploadFeature` config in `payload.config.ts` — a `displayWidth`
+(Small/Medium/Full) and `alignment` (Left/Center/Right, plus a `wrapText`
+checkbox for Left/Right controlling whether body text flows around it or
+the image just sits to one side on its own line) field, editable by
+clicking an inline image in the editor. `Posts.ts`'s `toHTML()` uses a
+custom `upload` converter override reading these two fields to wrap the
+default converter's output in a sized/positioned/floated `<div>` — the
+default converter has no concept of them, so without this override the
+controls would save but have zero effect on the published page.
+`cashlo-final`'s `globals.css` has a matching clearfix on `.payload-
+richtext` for the floated (wrap-on) case; see that repo's CLAUDE.md.
+
+**Table support** (`/table` slash command, pasting an HTML/Sheets/Docs table
+in as a real table) is opt-in via `EXPERIMENTAL_TableFeature()` in
+`payload.config.ts` — not in Payload's default Lexical feature set despite
+the name suggesting instability (it's one of Payload's own documented
+"recommended default" features). `defaultHTMLConverters` already knows how
+to render its `TableNode` to `<table>`, so no `toHTML()` changes were needed
+to pick it up once the feature was added.
 
 ## SEO plugin
 
@@ -223,6 +315,17 @@ Known-fixed issues worth knowing about if they resurface:
   something to build as a Payload collection or plugin.
 - The "MJ blog section" mentioned in Harender's email has no known repo in
   this workspace — still needs clarifying with him which project that is.
+- **`Posts.internalLinks`** (array of hand-picked `{label, url}` pairs, for
+  contextual "related reading" links inside/alongside a post — distinct from
+  the automatic Related Posts sidebar, which just auto-picks recent posts
+  from the same category) is a real field editors can already fill in, but
+  `cashlo-final` never reads it — filling it in currently has zero visible
+  effect on the published page. Needs wiring up frontend-side.
+- **Fully responsive images** (`srcset`/`sizes` so e.g. the hero banner
+  serves a smaller file on a narrow phone screen) aren't built — each
+  context (card, hero, thumbnail) serves one fixed-size image regardless of
+  viewport. What *is* built: each context gets an appropriately-sized file
+  instead of always the full original (see Media.ts's `imageSizes` above).
 
 ## Working conventions
 
