@@ -2,7 +2,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import sharp from 'sharp';
 import { mongooseAdapter } from '@payloadcms/db-mongodb';
-import { lexicalEditor, EXPERIMENTAL_TableFeature, UploadFeature } from '@payloadcms/richtext-lexical';
+import { lexicalEditor, EXPERIMENTAL_TableFeature, UploadFeature, FixedToolbarFeature } from '@payloadcms/richtext-lexical';
 import { seoPlugin } from '@payloadcms/plugin-seo';
 import { s3Storage } from '@payloadcms/storage-s3';
 import { buildConfig } from 'payload';
@@ -90,6 +90,12 @@ export default buildConfig({
         },
       }),
       EXPERIMENTAL_TableFeature(),
+      // Payload's default is InlineToolbarFeature only — a popup that
+      // appears near selected text, not a persistent bar. FixedToolbarFeature
+      // adds the always-visible toolbar (Bold, headings, table, etc.) above
+      // the content field that editors expect to see without first
+      // selecting text.
+      FixedToolbarFeature(),
     ],
   }),
   secret: process.env.PAYLOAD_SECRET || '',
