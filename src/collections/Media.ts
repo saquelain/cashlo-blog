@@ -19,11 +19,31 @@ export const Media: CollectionConfig = {
     },
   ],
   upload: {
+    // Lets an editor drag a crosshair over the uploaded image (in its admin
+    // detail view) marking the actual subject. Whenever a crop's aspect
+    // ratio doesn't match the source image's own aspect ratio — true for
+    // basically every size here unless the upload happens to already be
+    // exactly 16:10 — Payload centers the crop on that point instead of the
+    // image's literal center. Without this, `position: 'centre'` below is
+    // taken completely literally: an off-center subject (common — portrait
+    // photos, group shots, product-in-corner shots) gets cropped away on
+    // the tighter sizes (card, thumbnail) no matter how the source was
+    // composed. This is the actual fix for "the listing card is cutting off
+    // the wrong part of my photo" — switching the card to `object-fit:
+    // contain` was the other option, but that either letterboxes every card
+    // with empty bars or forces the grid to variable-height, which is why
+    // basically no blog platform does that for grid thumbnails.
+    focalPoint: true,
     // Each size needs its OWN `formatOptions` — the top-level one below
     // only converts the original/base image; Payload does not fall back to
     // it per size (confirmed against Payload's own resize source), so
     // without repeating it here, thumbnail/card/og were silently being
     // generated in the source's original format (jpeg/png), never webp.
+    //
+    // `position: 'centre'` below is now effectively just the fallback for
+    // an upload with no focal point set (Payload defaults focalX/focalY to
+    // 50/50, i.e. dead-center, until an editor moves it) — focalPoint above
+    // is what actually drives the crop once one is set.
     imageSizes: [
       { name: 'thumbnail', width: 400, height: 300, position: 'centre', formatOptions: { format: 'webp', options: { quality: 80 } } },
       { name: 'card', width: 768, height: 480, position: 'centre', formatOptions: { format: 'webp', options: { quality: 80 } } },

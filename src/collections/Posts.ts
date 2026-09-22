@@ -251,21 +251,38 @@ export const Posts: CollectionConfig = {
       hooks: { afterRead: [({ siblingData, req }) => toHTML(siblingData?.content, req)] },
     },
     {
-      // Used as: the blog listing card image, the full-width hero banner at
-      // the top of the post page (cashlo-final renders it from the `hero`
-      // size below), and the og:image/Article-schema image fallback when no
-      // SEO-tab OG override is set. One upload serves all of these via
-      // Media.ts's generated sizes — no separate hero-image field needed.
+      // Blog LISTING CARD image only (the grid on /blog) — deliberately not
+      // reused for the hero banner or social share image below; an editor
+      // may want a tighter/simpler shot for the small card thumbnail than
+      // for a full-width hero. See `coverImage` for those.
       name: 'featuredImage',
       type: 'upload',
       relationTo: 'media',
       required: true,
       admin: {
         description:
-          'Recommended ~1600×1000 (16:10) or larger. Keep the subject centered — ' +
-          'Payload crops this to several fixed-aspect sizes (hero banner, listing card, ' +
-          'social share image), so anything off-center gets cut on the tighter crops. ' +
-          'Alt text is set on the media asset itself once uploaded.',
+          'Shown on the blog listing page card only. Recommended ~800×500 (16:10) or ' +
+          'larger, subject centered — Payload crops this to the card\'s fixed aspect ratio, ' +
+          'so anything off-center gets cut. Alt text is set on the media asset itself once uploaded.',
+      },
+    },
+    {
+      // Full-width hero banner at the top of the post page, and the
+      // og:image/Twitter-card/Article-schema image fallback when no SEO-tab
+      // OG override is set — kept independent of `featuredImage` above so
+      // an editor can pick a wider/differently-cropped shot for a
+      // full-bleed hero than what works as a small card thumbnail. Optional:
+      // falls back to `featuredImage` on cashlo-final when left empty, so
+      // existing posts (and anyone who skips this) keep working.
+      name: 'coverImage',
+      type: 'upload',
+      relationTo: 'media',
+      admin: {
+        description:
+          'Optional — hero banner at the top of the post, and the social-share (OG) image. ' +
+          'Recommended ~1600×1000 (16:10) or larger, subject centered — this gets cropped ' +
+          'wider than the listing card, so a tight product/face shot can lose more here. ' +
+          'Leave empty to reuse the Featured Image above.',
       },
     },
     {
@@ -440,7 +457,8 @@ export const Posts: CollectionConfig = {
  * - Breadcrumb / Breadcrumb Schema        -> rendered in cashlo-final from the
  *                                            category + slug already on the doc.
  * - BlogPosting/Article Schema            -> JSON-LD built in cashlo-final from
- *                                            title/excerpt/featuredImage/author/dates.
+ *                                            title/excerpt/coverImage (falls back to
+ *                                            featuredImage)/author/dates.
  * - FAQ Schema                            -> JSON-LD built from the `faqs` array above.
  * - Author Schema                         -> JSON-LD built from the `author` relationship.
  * - Canonical URL / OG Tags / Twitter Tags-> handled by @payloadcms/plugin-seo
