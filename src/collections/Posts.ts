@@ -424,7 +424,10 @@ export const Posts: CollectionConfig = {
         },
         {
           label: 'Cover',
-          description: 'Images shown on the blog listing card and post hero.',
+          description:
+            'Images shown on the blog listing card and post hero. Note: Cover Image is optional — ' +
+            'if you leave it empty, the post hero and social-share image will fall back to using ' +
+            'Featured Image instead.',
           fields: [
             {
               // Blog LISTING CARD image only (the grid on /blog) — deliberately not
@@ -455,10 +458,10 @@ export const Posts: CollectionConfig = {
               relationTo: 'media',
               admin: {
                 description:
-                  'Optional — hero banner at the top of the post, and the social-share (OG) image. ' +
+                  '⚠️ Optional — if left empty, this will automatically fall back to Featured Image ' +
+                  'above instead. Hero banner at the top of the post, and the social-share (OG) image. ' +
                   'Recommended ~1600×1000 (16:10) or larger, subject centered — this gets cropped ' +
-                  'wider than the listing card, so a tight product/face shot can lose more here. ' +
-                  'Leave empty to reuse the Featured Image above.',
+                  'wider than the listing card, so a tight product/face shot can lose more here.',
               },
             },
           ],

@@ -1,7 +1,45 @@
 import type { CollectionConfig } from 'payload';
 import { APIError } from 'payload';
+import sharp from 'sharp';
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024; // 2MB
+// Matches `upload.formatOptions`' webp quality below — encoding our
+// compression attempts at the same quality Payload itself will apply to the
+// stored original means the size we measure here is a realistic preview of
+// what actually lands in R2, not a guess a later re-encode could blow past.
+const COMPRESS_QUALITY = 80;
+// Floor width so auto-compression never shrinks a blog image below what the
+// biggest generated size (`hero`, 1600w) would want — below this we trade
+// quality instead of further dimensions.
+const MIN_WIDTH = 480;
+
+// Progressively resizes an oversized image (then, if still too big at the
+// floor width, drops quality) until the re-encoded webp buffer fits under
+// `maxBytes` — so an editor never has to manually compress/re-export an
+// image and retry the upload; this just makes it fit. Returns null only if
+// even the smallest/lowest-quality attempt can't get under the limit.
+async function compressBelowLimit(buffer: Buffer, maxBytes: number): Promise<Buffer | null> {
+  const { width: originalWidth } = await sharp(buffer).metadata();
+  let width = originalWidth ?? 1600;
+
+  while (width >= MIN_WIDTH) {
+    const output = await sharp(buffer)
+      .resize({ width, withoutEnlargement: true })
+      .webp({ quality: COMPRESS_QUALITY })
+      .toBuffer();
+    if (output.length <= maxBytes) return output;
+    width = Math.round(width * 0.85);
+  }
+
+  for (const quality of [60, 40, 20]) {
+    const output = await sharp(buffer)
+      .resize({ width: MIN_WIDTH, withoutEnlargement: true })
+      .webp({ quality })
+      .toBuffer();
+    if (output.length <= maxBytes) return output;
+  }
+  return null;
+}
 
 // Covers: Featured Image, Image Alt Text, Image Compression, WebP/AVIF,
 // Responsive Images (via Payload's imageSizes + Sharp, generated automatically
@@ -24,13 +62,35 @@ export const Media: CollectionConfig = {
     // API directly — since they all funnel through this same create/update
     // operation, not just one of them.
     beforeOperation: [
-      ({ req, operation }) => {
-        if ((operation === 'create' || operation === 'update') && req.file && req.file.size > MAX_UPLOAD_BYTES) {
+      async ({ req, operation }) => {
+        if ((operation !== 'create' && operation !== 'update') || !req.file) return;
+        if (req.file.size <= MAX_UPLOAD_BYTES) return;
+
+        const { pages } = await sharp(req.file.data).metadata();
+        if (pages && pages > 1) {
+          // Animated (GIF / animated WebP) — re-encoding through the static
+          // pipeline below would silently collapse it to a single frame,
+          // changing the asset in a way the editor didn't ask for. Rare for
+          // blog content, so this still asks for a manual resize rather than
+          // guessing what to keep.
           throw new APIError(
-            `Image is too large (${(req.file.size / (1024 * 1024)).toFixed(1)}MB). Maximum allowed size is 2MB.`,
+            `Animated image is too large (${(req.file.size / (1024 * 1024)).toFixed(1)}MB). Maximum allowed size is 2MB — please resize/compress it manually before uploading.`,
             400,
           );
         }
+
+        const compressed = await compressBelowLimit(req.file.data, MAX_UPLOAD_BYTES);
+        if (!compressed) {
+          throw new APIError(
+            `Image (${(req.file.size / (1024 * 1024)).toFixed(1)}MB) couldn't be compressed under the 2MB limit — please use a smaller image.`,
+            400,
+          );
+        }
+
+        req.file.data = compressed;
+        req.file.size = compressed.length;
+        req.file.mimetype = 'image/webp';
+        req.file.name = req.file.name.replace(/\.[^.]+$/, '') + '.webp';
       },
     ],
   },

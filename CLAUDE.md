@@ -350,16 +350,29 @@ Known-fixed issues worth knowing about if they resurface:
   folder should never exist in a working copy now that local storage is
   disabled, but is ignored defensively in case something writes there again.
 - **`src/collections/Media.ts`** has a `hooks.beforeOperation` hook
-  enforcing a **2MB max file size** on every upload/replace, throwing an
-  `APIError` (400) before the file reaches R2. Payload has no built-in
-  per-collection file-size option (confirmed against its `UploadConfig`
-  type) — this hook is the documented way to add one. It covers every path
-  that creates/updates a Media doc: the admin panel's own upload UI
-  (featured/cover image fields), the Lexical editor's inline image feature,
-  and the raw REST API, since they all funnel through this same collection
-  operation. `cashlo-backend`'s separate `/upload/blog-image` endpoint (see
-  its own CLAUDE.md) has the matching 2MB cap on its own multer instance,
-  independently, since it's a different upload path entirely.
+  enforcing a **2MB max file size** on every upload/replace. Payload has no
+  built-in per-collection file-size option (confirmed against its
+  `UploadConfig` type) — this hook is the documented way to add one. It
+  covers every path that creates/updates a Media doc: the admin panel's own
+  upload UI (featured/cover image fields), the Lexical editor's inline image
+  feature, and the raw REST API, since they all funnel through this same
+  collection operation — including images dropped into a post's body, not
+  just featured/cover.
+  - **Auto-compresses rather than rejecting**: an oversized static image
+    (jpeg/png/webp/avif) is progressively resized and re-encoded via `sharp`
+    (width scaled down in steps, then quality dropped as a last resort at a
+    480px floor) until it fits under 2MB, so an editor never has to manually
+    compress/re-export and retry — see `compressBelowLimit()` in the same
+    file. Re-encodes at the same quality (80) as `upload.formatOptions`
+    below so the size measured here is a realistic preview of what Payload's
+    own webp conversion will actually store.
+  - **Animated images (GIF / animated WebP) still hard-reject** with an
+    `APIError` (400) instead of auto-compressing — re-encoding through the
+    static pipeline above would silently collapse them to a single frame,
+    which is a bigger, unasked-for change than resizing a still image.
+  - `cashlo-backend`'s separate `/upload/blog-image` endpoint (see its own
+    CLAUDE.md) still hard-rejects over its own 2MB cap on a plain multer
+    instance — a different, independent upload path, not this hook.
 
 ## Admin UI customization (2026-09-22)
 
