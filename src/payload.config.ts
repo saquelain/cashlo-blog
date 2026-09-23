@@ -10,7 +10,7 @@ import { buildConfig } from 'payload';
 import { Users } from './collections/Users';
 import { Media } from './collections/Media';
 import { Categories } from './collections/Categories';
-import { Posts } from './collections/Posts';
+import { Posts, postsAdvancedSeoFields } from './collections/Posts';
 import { Redirects } from './collections/Redirects';
 
 const filename = fileURLToPath(import.meta.url);
@@ -121,6 +121,13 @@ export default buildConfig({
       // this covers "SEO Title", "Meta Description" and "OG Override".
       generateTitle: ({ doc }: any) => (doc?.title ? `${doc.title} | Cashlo` : 'Cashlo'),
       generateDescription: ({ doc }: any) => doc?.excerpt || '',
+      // Appends Posts.ts's focusKeyword/canonicalUrlOverride/robots/
+      // robotsNoarchive fields onto this same auto-generated SEO tab, so
+      // every SEO control lives in one place instead of splitting "basic"
+      // SEO here and "Advanced SEO" in a separate collapsible on the Write
+      // tab. Runs for every collection this plugin covers (only `posts`
+      // here), so it's safe to always append.
+      fields: ({ defaultFields }: any) => [...defaultFields, ...postsAdvancedSeoFields],
     }),
     // Reuses the same Cloudflare R2 account/bucket cashlo-backend already
     // uploads blog/Aadhaar images to (see cashlo-backend/src/services/s3.service.js),

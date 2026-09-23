@@ -240,8 +240,11 @@ to pick it up once the feature was added.
 the SEO tab (title/description/OG image) on `Posts`, pre-filled from
 title/excerpt/featuredImage but overridable per-post. `focusKeyword`,
 `canonicalUrlOverride`, and `robots`/`robotsNoarchive` are hand-rolled fields
-on `Posts` (the plugin doesn't cover these) — see the "Advanced SEO"
-collapsible section in `Posts.ts`.
+the plugin doesn't cover — defined as `postsAdvancedSeoFields` in `Posts.ts`
+and appended onto that same auto-generated SEO tab via the plugin's `fields`
+option in `payload.config.ts`, so every SEO control (basic + advanced) lives
+in one tab instead of splitting across a separate "Advanced SEO" collapsible
+on the Write tab.
 
 ## Revalidation on publish
 

@@ -1,4 +1,4 @@
-import type { CollectionConfig, PayloadRequest } from 'payload';
+import type { CollectionConfig, Field, PayloadRequest } from 'payload';
 import { convertLexicalToHTML, defaultHTMLConverters, UploadHTMLConverter } from '@payloadcms/richtext-lexical/html';
 import { revalidateBlogFrontend } from '../utils/revalidateFrontend';
 
@@ -104,6 +104,36 @@ const ROBOTS_OPTIONS = [
   { label: 'Noindex, Nofollow', value: 'noindex,nofollow' },
 ];
 
+// Advanced SEO overrides not covered by @payloadcms/plugin-seo's own
+// auto-generated fields (title/description/OG image) — appended onto that
+// same plugin-generated "SEO" tab via the plugin's `fields` option in
+// payload.config.ts, rather than living in a separate collapsible on the
+// Write tab, so every SEO-related control for an editor lives in one place.
+export const postsAdvancedSeoFields: Field[] = [
+  {
+    name: 'focusKeyword',
+    type: 'text',
+    admin: { description: 'Reference only for the editor — not rendered on the page.' },
+  },
+  {
+    name: 'canonicalUrlOverride',
+    type: 'text',
+    admin: { description: 'Leave empty to use the default https://www.cashlo.app/blog/<slug> canonical URL.' },
+  },
+  {
+    name: 'robots',
+    type: 'select',
+    defaultValue: 'index,follow',
+    options: ROBOTS_OPTIONS,
+  },
+  {
+    name: 'robotsNoarchive',
+    type: 'checkbox',
+    defaultValue: false,
+    label: 'Add noarchive',
+  },
+];
+
 const slugify = (value: string) =>
   value
     .toLowerCase()
@@ -172,6 +202,21 @@ export const Posts: CollectionConfig = {
           const text = JSON.stringify(data.content);
           const wordCount = text.split(/\s+/).filter(Boolean).length;
           data.readingTimeMinutes = Math.max(1, Math.round(wordCount / 200));
+        }
+        return data;
+      },
+      ({ data, originalDoc }) => {
+        // Published Date (automatic) — stamp the real moment a post first
+        // goes live, so an editor who just clicks Publish (or a scheduled
+        // job flipping _status at its scheduled time) doesn't leave this
+        // blank or have to type a date/time by hand. `cashlo-final` sorts,
+        // displays, and builds schema.org dates off this field, so an unset
+        // or hand-typed-midnight value visibly breaks all three. Only fills
+        // it in the first time a post becomes published — an editor's own
+        // value (e.g. backdating, or a deliberate future Schedule date)
+        // always wins and is never overwritten on later saves.
+        if (data?._status === 'published' && !data.publishedAt && originalDoc?._status !== 'published') {
+          data.publishedAt = new Date().toISOString();
         }
         return data;
       },
@@ -374,36 +419,6 @@ export const Posts: CollectionConfig = {
               hasMany: true,
               maxRows: 3,
               admin: { description: 'Leave empty to let the frontend auto-pick recent posts from the same category.' },
-            },
-
-            // --- MANUAL: Advanced SEO overrides not covered by the SEO plugin tab ---
-            {
-              type: 'collapsible',
-              label: 'Advanced SEO',
-              fields: [
-                {
-                  name: 'focusKeyword',
-                  type: 'text',
-                  admin: { description: 'Reference only for the editor — not rendered on the page.' },
-                },
-                {
-                  name: 'canonicalUrlOverride',
-                  type: 'text',
-                  admin: { description: 'Leave empty to use the default https://www.cashlo.app/blog/<slug> canonical URL.' },
-                },
-                {
-                  name: 'robots',
-                  type: 'select',
-                  defaultValue: 'index,follow',
-                  options: ROBOTS_OPTIONS,
-                },
-                {
-                  name: 'robotsNoarchive',
-                  type: 'checkbox',
-                  defaultValue: false,
-                  label: 'Add noarchive',
-                },
-              ],
             },
           ],
         },
