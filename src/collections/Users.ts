@@ -14,7 +14,14 @@ export const Users: CollectionConfig = {
     // Only logged-in CMS users can view the user list; nobody can self-register.
     read: ({ req: { user } }) => Boolean(user),
     create: ({ req: { user } }) => user?.role === 'admin',
-    update: ({ req: { user } }) => user?.role === 'admin',
+    // Admins can update anyone; any logged-in user can update their own doc
+    // (so editors can fill in their own Blog Author Profile below). Field-level
+    // access on `role` still keeps self-promotion locked to admins only.
+    update: ({ req: { user } }) => {
+      if (!user) return false;
+      if (user.role === 'admin') return true;
+      return { id: { equals: user.id } };
+    },
     delete: ({ req: { user } }) => user?.role === 'admin',
   },
   fields: [
@@ -28,6 +35,9 @@ export const Users: CollectionConfig = {
       type: 'select',
       required: true,
       defaultValue: 'editor',
+      access: {
+        update: ({ req: { user } }) => user?.role === 'admin',
+      },
       options: [
         { label: 'Admin', value: 'admin' },
         { label: 'Editor', value: 'editor' },
